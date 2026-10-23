@@ -10,8 +10,10 @@ import (
 
 func main() {
 	addr := ":" + envOr("PORT", "8080")
-	log.Printf("macro-lens backend listening on %s", addr)
-	if err := http.ListenAndServe(addr, api.NewRouter()); err != nil {
+	// STATIC_DIR 指向前端打包产物；本地开发用 Vite，不需要设置
+	staticDir := os.Getenv("STATIC_DIR")
+	log.Printf("macro-lens backend listening on %s (static: %q)", addr, staticDir)
+	if err := http.ListenAndServe(addr, api.NewRouter(staticDir)); err != nil {
 		log.Fatal(err)
 	}
 }

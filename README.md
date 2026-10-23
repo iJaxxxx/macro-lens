@@ -33,3 +33,11 @@ cd frontend && npm install && npm run dev
 | --- | --- | --- |
 | GET | `/api/health` | 健康检查 |
 | GET | `/api/assets` | 首页行情卡片数据 |
+
+## 部署
+
+发布到 AWS EC2 的完整步骤见 [docs/deploy-aws.md](docs/deploy-aws.md)，配置好后一条命令发布：
+
+```bash
+HOST=<服务器公网 IP> KEY=~/.ssh/macro-lens.pem ./deploy/deploy.sh
+```
