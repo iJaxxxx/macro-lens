@@ -26,8 +26,12 @@ scp -i "$KEY" -r "$OUT/macro-lens" "$ROOT/frontend/dist" "$ROOT/deploy/macro-len
 echo "==> 安装并重启服务"
 "${SSH[@]}" 'set -e
 sudo mkdir -p /opt/macro-lens
+# 正在运行的程序不能直接覆盖（Text file busy），先拷成新文件再改名替换；
+# 改名不影响还在运行的旧进程，restart 之后才切到新版本
+sudo cp ~/release/macro-lens /opt/macro-lens/macro-lens.new
+sudo mv -f /opt/macro-lens/macro-lens.new /opt/macro-lens/macro-lens
 sudo rm -rf /opt/macro-lens/dist
-sudo cp -r ~/release/macro-lens ~/release/dist /opt/macro-lens/
+sudo cp -r ~/release/dist /opt/macro-lens/
 sudo chown -R ec2-user:ec2-user /opt/macro-lens
 sudo cp ~/release/macro-lens.service /etc/systemd/system/
 sudo systemctl daemon-reload
