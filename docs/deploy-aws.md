@@ -75,7 +75,26 @@ sudo systemctl restart macro-lens    # 重启
 不用的时候在 EC2 控制台 **Stop instance** 可以省钱；**Terminate** 是彻底删除，删了就回不来。
 注意：Stop 再 Start 后公网 IP 会变，需要固定 IP 可以申请 Elastic IP。
 
+## 用 GitHub Actions 自动发布
+
+[`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) 会在每次 push 到 `main` 后，在 GitHub 的服务器上
+跑后端测试，然后执行同一个 `deploy/deploy.sh`。本地网络连不上服务器（比如公司 VPN 拦截了 SSH）时也能发布。
+也可以在仓库的 **Actions → Deploy → Run workflow** 手动触发。
+
+第一次使用前需要配置两处（自己操作）：
+
+1. **GitHub Secrets**：仓库 **Settings → Secrets and variables → Actions → New repository secret**，添加：
+
+   | Name | Value |
+   | --- | --- |
+   | `EC2_HOST` | 服务器公网 IP |
+   | `EC2_SSH_KEY` | `macro-lens.pem` 的完整内容，可以用 `pbcopy < ~/.ssh/macro-lens.pem` 复制 |
+
+2. **安全组放行 GitHub**：GitHub 的服务器 IP 不固定，需要把 22 端口的入站规则来源改成 `0.0.0.0/0`（Anywhere-IPv4）。
+   EC2 只允许密钥登录，没有私钥的人连上 22 端口也登不进去；介意的话可以只在发布时临时放开。
+
+发布结果在仓库的 **Actions** 页面查看，失败时点进去能看到每一步的日志。
+
 ## 后续可以做的
 
 - 绑定域名 + HTTPS（Route 53 或其他域名商 + Caddy / Nginx 自动签证书）
-- 用 GitHub Actions 在 push 后自动执行发布脚本

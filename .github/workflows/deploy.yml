@@ -1,0 +1,59 @@
+# push 到 main 后自动测试并发布到 EC2，也可以在 Actions 页面手动触发。
+# 需要在仓库 Settings → Secrets and variables → Actions 里配置：
+#   EC2_HOST     服务器公网 IP，如 3.27.111.130
+#   EC2_SSH_KEY  macro-lens.pem 的完整内容（包括 BEGIN/END 两行）
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# 同一时间只跑一个发布，新的 push 会排队等上一个结束
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: frontend/.nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.mod
+
+      - name: 后端测试
+        working-directory: backend
+        run: go test ./...
+
+      - name: 写入 SSH 密钥
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$EC2_SSH_KEY" > "$RUNNER_TEMP/macro-lens.pem"
+          chmod 600 "$RUNNER_TEMP/macro-lens.pem"
+          # 新的 runner 没见过这台服务器，提前记下它的主机指纹，否则 ssh 会卡在确认提示
+          ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts
+
+      - name: 发布
+        env:
+          HOST: ${{ secrets.EC2_HOST }}
+          # 环境变量里的 ~ 不会被展开，所以用 runner 的临时目录给出绝对路径
+          KEY: ${{ runner.temp }}/macro-lens.pem
+        run: ./deploy/deploy.sh
+
+      - name: 检查线上接口
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+        run: curl -fsS "http://$EC2_HOST/api/assets"
