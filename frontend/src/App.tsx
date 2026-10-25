@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Bell, BellRing, CalendarDays, Check, ChevronDown, ChevronRight, CircleUserRound,
   Clock3, FileText, House, LineChart, Menu, RotateCcw, Sparkles, X,
@@ -6,8 +6,11 @@ import {
 
 type Page = "overview" | "history" | "review";
 type Asset = "黄金" | "原油" | "美股";
+type MarketAsset = { name: string; code: string; price: string; change: string; up: boolean; path: string };
+type ApiAsset = Omit<MarketAsset, "path"> & { points: number[] | null };
 
-const assets = [
+// 接口不可用时展示的设计稿数据
+const sampleAssets: MarketAsset[] = [
   { name: "标普 500", code: "S&P 500", price: "5,842.3", change: "+0.62%", up: true, path: "M2 43 C25 36 28 44 50 31 S77 35 96 21 S126 22 158 7" },
   { name: "现货黄金", code: "XAU / USD", price: "2,687.4", change: "+1.84%", up: true, path: "M2 44 C23 45 30 34 51 37 S77 24 96 27 S119 12 158 6" },
   { name: "WTI 原油", code: "CL1!", price: "68.92", change: "-2.15%", up: false, path: "M2 8 C25 16 34 9 53 22 S80 17 101 31 S130 26 158 43" },
@@ -71,6 +74,29 @@ function MobileNav({ page, setPage }: { page: Page; setPage: (p: Page) => void }
   return <nav className="mobile-tabs">{items.map(([name, value, Icon]) => <button className={page === value ? "active" : ""} onClick={() => setPage(value)} key={name}><Icon size={21} strokeWidth={1.75} /><span>{name}</span></button>)}</nav>;
 }
 
+// 把走势点缩放进 Sparkline 的 160×50 画布，上下各留 6px
+function sparkPath(points: number[]) {
+  const min = Math.min(...points), max = Math.max(...points), span = max - min || 1;
+  return points.map((v, i) => `${i ? "L" : "M"}${(2 + (i / (points.length - 1)) * 156).toFixed(1)} ${(44 - ((v - min) / span) * 38).toFixed(1)}`).join(" ");
+}
+
+function useMarketAssets() {
+  const [assets, setAssets] = useState(sampleAssets);
+  useEffect(() => {
+    const ctrl = new AbortController();
+    fetch("/api/assets", { signal: ctrl.signal })
+      .then(res => res.ok ? res.json() as Promise<ApiAsset[]> : Promise.reject(res.status))
+      .then(data => setAssets(data.map(({ points, ...a }) => ({
+        ...a,
+        // 没有走势数据时沿用设计稿里同名卡片的曲线
+        path: points && points.length > 1 ? sparkPath(points) : sampleAssets.find(x => x.name === a.name)?.path ?? "",
+      }))))
+      .catch(err => { if (!ctrl.signal.aborted) console.warn("加载行情失败，使用示例数据", err); });
+    return () => ctrl.abort();
+  }, []);
+  return assets;
+}
+
 function Sparkline({ path, up }: { path: string; up: boolean }) {
   return <svg viewBox="0 0 160 50" className={up ? "spark up" : "spark down"}><path d={path} /></svg>;
 }
@@ -78,6 +104,7 @@ function Sparkline({ path, up }: { path: string; up: boolean }) {
 function Overview() {
   const [asset, setAsset] = useState<Asset>("美股");
   const [period, setPeriod] = useState("今日");
+  const assets = useMarketAssets();
   const info = attribution[asset];
   return (
     <main className="page">
