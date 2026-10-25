@@ -44,7 +44,11 @@ jobs:
           printf '%s\n' "$EC2_SSH_KEY" > "$RUNNER_TEMP/macro-lens.pem"
           chmod 600 "$RUNNER_TEMP/macro-lens.pem"
           # 新的 runner 没见过这台服务器，提前记下它的主机指纹，否则 ssh 会卡在确认提示
-          ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts
+          if ! ssh-keyscan -T 15 -H "$EC2_HOST" >> ~/.ssh/known_hosts || ! grep -q . ~/.ssh/known_hosts; then
+            echo "::error::连不上服务器的 22 端口：检查 EC2_HOST 是否正确、实例是否在运行、安全组 22 端口来源是否为 0.0.0.0/0"
+            nc -vz -w 10 "$EC2_HOST" 22 || true
+            exit 1
+          fi
 
       - name: 发布
         env:
