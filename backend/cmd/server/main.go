@@ -4,8 +4,12 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
+	_ "time/tzdata" // 服务器上不一定装了时区数据，内置一份，按纽约时间划分交易日要用
 
 	"github.com/iJaxxxx/macro-lens/backend/internal/api"
+	"github.com/iJaxxxx/macro-lens/backend/internal/auth"
+	"github.com/iJaxxxx/macro-lens/backend/internal/llm"
 	"github.com/iJaxxxx/macro-lens/backend/internal/market"
 )
 
@@ -13,8 +17,27 @@ func main() {
 	addr := ":" + envOr("PORT", "8080")
 	// STATIC_DIR 指向前端打包产物；本地开发用 Vite，不需要设置
 	staticDir := os.Getenv("STATIC_DIR")
-	log.Printf("macro-lens backend listening on %s (static: %q)", addr, staticDir)
-	if err := http.ListenAndServe(addr, api.NewRouter(staticDir, market.NewYahoo())); err != nil {
+	// DATA_DIR 存放用户的交易记录和会话密钥
+	dataDir := envOr("DATA_DIR", "data")
+	secret, err := auth.LoadSecret(os.Getenv("SESSION_SECRET"), dataDir)
+	if err != nil {
+		log.Fatalf("session secret: %v", err)
+	}
+
+	cfg := api.Config{
+		StaticDir:      staticDir,
+		Market:         market.NewYahoo(),
+		LLM:            llm.FromEnv(),
+		GoogleClientID: os.Getenv("GOOGLE_CLIENT_ID"),
+		SessionSecret:  secret,
+		DataDir:        dataDir,
+	}
+	if v := os.Getenv("ALLOWED_EMAILS"); v != "" {
+		cfg.AllowedEmails = strings.Split(v, ",")
+	}
+	log.Printf("macro-lens backend listening on %s (static: %q, data: %q, llm: %v, google login: %v)",
+		addr, staticDir, dataDir, cfg.LLM != nil, cfg.GoogleClientID != "")
+	if err := http.ListenAndServe(addr, api.NewRouter(cfg)); err != nil {
 		log.Fatal(err)
 	}
 }

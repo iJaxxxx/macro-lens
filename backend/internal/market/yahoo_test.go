@@ -44,3 +44,27 @@ func TestYahooError(t *testing.T) {
 		t.Fatal("want error on 429")
 	}
 }
+
+func TestYahooHistory(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("interval") != "1d" {
+			t.Errorf("query = %q", r.URL.RawQuery)
+		}
+		// 1761768000 = 2025-10-29 16:00 纽约；后两个点同属 10-30，保留后一个；null 跳过
+		w.Write([]byte(`{"chart":{"result":[{
+			"meta":{"regularMarketPrice":3},
+			"timestamp":[1761768000,1761800000,1761854400,1761870000],
+			"indicators":{"quote":[{"close":[1.0,null,2.0,3.0]}]}
+		}],"error":null}}`))
+	}))
+	defer srv.Close()
+
+	bars, err := (&Yahoo{BaseURL: srv.URL, HTTP: srv.Client()}).History(context.Background(), "VOO")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Bar{{"2025-10-29", 1}, {"2025-10-30", 3}}
+	if !slices.Equal(bars, want) {
+		t.Errorf("bars = %v, want %v", bars, want)
+	}
+}
