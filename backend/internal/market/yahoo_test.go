@@ -50,10 +50,10 @@ func TestYahooHistory(t *testing.T) {
 		if r.URL.Query().Get("interval") != "1d" {
 			t.Errorf("query = %q", r.URL.RawQuery)
 		}
-		// 1761768000 = 2025-10-29 16:00 纽约；后两个点同属 10-30，保留后一个；null 跳过
+		// 纽约时间 10-29 09:30、10-30 09:30（null，跳过）、12:00、15:00；同一天保留最后一个
 		w.Write([]byte(`{"chart":{"result":[{
 			"meta":{"regularMarketPrice":3},
-			"timestamp":[1761768000,1761800000,1761854400,1761870000],
+			"timestamp":[1761744600,1761831000,1761840000,1761850800],
 			"indicators":{"quote":[{"close":[1.0,null,2.0,3.0]}]}
 		}],"error":null}}`))
 	}))

@@ -78,6 +78,25 @@ func TestVerify(t *testing.T) {
 	if _, err := v.Verify(context.Background(), sign(t, key, "unknown", good)); err == nil {
 		t.Error("unknown kid accepted")
 	}
+	// 公钥缓存未过期时，一分钟内连续出现的未知 kid 不会再去拉 Google
+	fetches := 0
+	v.HTTP.Transport = countingTransport{v.HTTP.Transport, &fetches}
+	for range 5 {
+		v.Verify(context.Background(), sign(t, key, "random", good))
+	}
+	if fetches > 0 {
+		t.Errorf("fetches = %d, want 0 within minRefetch", fetches)
+	}
+}
+
+type countingTransport struct {
+	next http.RoundTripper
+	n    *int
+}
+
+func (c countingTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	*c.n++
+	return c.next.RoundTrip(r)
 }
 
 func TestSessions(t *testing.T) {

@@ -64,12 +64,7 @@ func computeAttribution(ctx context.Context, m *marketCache, t tracked) (Attribu
 	slices.SortFunc(v.Rows, func(a, b AttributionRow) int { return cmp.Compare(math.Abs(b.Contribution), math.Abs(a.Contribution)) })
 	v.Rows = append(v.Rows, AttributionRow{Name: "其他", Factor: "因子以外的特异因素", Contribution: a.Residual, Share: a.ResidualShare})
 
-	closes := make([]float64, len(bars[t.symbol]))
-	dates := make([]string, len(closes))
-	for i, b := range bars[t.symbol] {
-		closes[i], dates[i] = b.Close, b.Date
-	}
-	v.Snapshot = quant.TakeSnapshot(dates, closes)
+	v.Snapshot = quant.TakeSnapshot(closesOf(bars[t.symbol]))
 	v.Title, v.Summary = ruleNarrative(v)
 	return v, nil
 }
@@ -125,11 +120,20 @@ type narrator struct {
 
 type narration struct {
 	text    string
+	total   float64 // 生成解读时的涨跌幅
 	at      time.Time
 	running bool
 }
 
-const narrationTTL = time.Hour
+// 涨跌幅变化超过 0.3 个百分点或方向反转，旧解读就不再适用
+func (e *narration) matches(total float64) bool {
+	return e.text != "" && (e.total >= 0) == (total >= 0) && math.Abs(e.total-total) < 0.003
+}
+
+const (
+	narrationTTL   = time.Hour
+	narrationRetry = 10 * time.Minute // 两次生成之间至少间隔这么久，控制模型调用次数
+)
 
 var narrationSchema = llm.Object(map[string]any{
 	"summary": llm.String("三到四句话的中文解读，给普通投资者看"),
@@ -147,11 +151,15 @@ func (n *narrator) get(v AttributionView) (string, bool) {
 		e = &narration{}
 		n.entries[key] = e
 	}
-	if !e.running && time.Since(e.at) > narrationTTL {
+	stale := time.Since(e.at) > narrationTTL || (e.text != "" && !e.matches(v.Total))
+	if !e.running && stale && time.Since(e.at) > narrationRetry {
 		e.running = true
 		go n.generate(e, v)
 	}
-	return e.text, e.text != ""
+	if !e.matches(v.Total) {
+		return "", false
+	}
+	return e.text, true
 }
 
 func (n *narrator) generate(e *narration, v AttributionView) {
@@ -173,9 +181,7 @@ func (n *narrator) generate(e *narration, v AttributionView) {
 	e.at = time.Now()
 	if err != nil {
 		log.Printf("narration %s: %v", v.Symbol, err)
-		// 失败后过 10 分钟再试
-		e.at = time.Now().Add(-narrationTTL + 10*time.Minute)
 		return
 	}
-	e.text = out.Summary
+	e.text, e.total = out.Summary, v.Total
 }

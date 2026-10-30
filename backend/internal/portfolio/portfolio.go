@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -38,6 +37,12 @@ func (e ValidationError) Error() string { return e.msg }
 
 func invalid(format string, args ...any) error { return ValidationError{fmt.Sprintf(format, args...)} }
 
+// 上下限保证 数量 × 价格 不会溢出，也不会出现小到被当成 0 的持仓
+const (
+	minQuantity = 1e-6
+	maxAmount   = 1e12
+)
+
 var symbolRe = regexp.MustCompile(`^[A-Z0-9^=.\-]{1,15}$`)
 
 // Normalize 清洗并校验一条用户提交的交易。
@@ -49,12 +54,12 @@ func (t *Transaction) Normalize() error {
 		return invalid("代码格式不正确，例如 VOO、GC=F、^GSPC")
 	case t.Side != "buy" && t.Side != "sell":
 		return invalid("方向只能是买入或卖出")
-	case !(t.Quantity > 0) || math.IsInf(t.Quantity, 0):
-		return invalid("数量必须大于 0")
-	case !(t.Price > 0) || math.IsInf(t.Price, 0):
-		return invalid("价格必须大于 0")
-	case t.Fee < 0 || math.IsNaN(t.Fee) || math.IsInf(t.Fee, 0):
-		return invalid("手续费不能为负")
+	case !(t.Quantity >= minQuantity && t.Quantity <= maxAmount):
+		return invalid("数量必须在 %g 到 %g 之间", minQuantity, maxAmount)
+	case !(t.Price > 0 && t.Price <= maxAmount):
+		return invalid("价格必须大于 0 且不超过 %g", maxAmount)
+	case !(t.Fee >= 0 && t.Fee <= maxAmount):
+		return invalid("手续费必须在 0 到 %g 之间", maxAmount)
 	case len([]rune(t.Note)) > 200:
 		return invalid("备注最多 200 字")
 	}
@@ -99,7 +104,7 @@ func Holdings(txs []Transaction) ([]Holding, error) {
 			h.CostBasis += t.Quantity*t.Price + t.Fee
 			h.Quantity += t.Quantity
 		case "sell":
-			if t.Quantity > h.Quantity+eps {
+			if h.Quantity <= eps || t.Quantity > h.Quantity+eps {
 				return nil, invalid("%s 在 %s 卖出 %g，超过当时持仓 %g", t.Symbol, t.Date, t.Quantity, h.Quantity)
 			}
 			avg := h.CostBasis / h.Quantity

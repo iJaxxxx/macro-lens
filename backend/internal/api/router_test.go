@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -120,6 +121,30 @@ func TestPortfolioRequiresLogin(t *testing.T) {
 	}
 	if rec := do(t, h, "DELETE", "/api/portfolio/transactions/nope", "", cookie); rec.Code != http.StatusNotFound {
 		t.Errorf("delete missing status = %d", rec.Code)
+	}
+}
+
+// 从白名单移除后，已签发的会话立即失效
+func TestAllowlistRevokesSession(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.AllowedEmails = []string{"alice@gmail.com"}
+	h := NewRouter(cfg)
+	rec := httptest.NewRecorder()
+	auth.NewSessions(cfg.SessionSecret).Issue(rec, httptest.NewRequest("GET", "/", nil), auth.User{Sub: "2", Email: "bob@gmail.com"})
+	cookie := rec.Result().Cookies()[0]
+	if rec := do(t, h, "GET", "/api/portfolio", "", cookie); rec.Code != http.StatusForbidden {
+		t.Errorf("portfolio status = %d, want 403", rec.Code)
+	}
+	if rec := do(t, h, "GET", "/api/me", "", cookie); rec.Code != http.StatusUnauthorized {
+		t.Errorf("me status = %d, want 401", rec.Code)
+	}
+}
+
+func TestWriteJSONEncodeError(t *testing.T) {
+	rec := httptest.NewRecorder()
+	writeJSON(rec, map[string]float64{"x": math.NaN()})
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500", rec.Code)
 	}
 }
 

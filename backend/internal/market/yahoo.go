@@ -41,8 +41,8 @@ func NewYahoo() *Yahoo {
 // 20 小时足够覆盖一个交易日，又不会混进前一天的股指数据。
 const sessionWindow = 20 * 60 * 60
 
-// 日线按纽约时间划分交易日，期货夜盘的时间戳也能落到正确的那一天
-var newYork = mustLoad("America/New_York")
+// NewYork 是美股和 CME 期货的交易所时区
+var NewYork = mustLoad("America/New_York")
 
 func mustLoad(name string) *time.Location {
 	loc, err := time.LoadLocation(name)
@@ -50,6 +50,22 @@ func mustLoad(name string) *time.Location {
 		panic(err)
 	}
 	return loc
+}
+
+// TradingDate 返回时间点所属的交易日（纽约时间）。CME 期货 18:00 开始的夜盘属于下一个交易日，
+// 周末的夜盘（周日晚上）属于周一；股票 18:00 后没有成交，不受影响。
+func TradingDate(t time.Time) string {
+	t = t.In(NewYork)
+	if t.Hour() >= 18 {
+		t = t.AddDate(0, 0, 1)
+	}
+	switch t.Weekday() {
+	case time.Saturday:
+		t = t.AddDate(0, 0, 2)
+	case time.Sunday:
+		t = t.AddDate(0, 0, 1)
+	}
+	return t.Format(time.DateOnly)
 }
 
 type chartResult struct {
@@ -154,7 +170,7 @@ func (y *Yahoo) History(ctx context.Context, symbol string) ([]Bar, error) {
 		if closes[i] == nil || *closes[i] == 0 {
 			continue
 		}
-		date := time.Unix(r.Timestamp[i], 0).In(newYork).Format(time.DateOnly)
+		date := TradingDate(time.Unix(r.Timestamp[i], 0))
 		if n := len(bars); n > 0 && bars[n-1].Date == date {
 			bars[n-1].Close = *closes[i]
 			continue

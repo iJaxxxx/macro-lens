@@ -36,10 +36,14 @@ type Verifier struct {
 	HTTP     *http.Client
 	Now      func() time.Time
 
-	mu      sync.Mutex
-	keys    map[string]*rsa.PublicKey
-	expires time.Time
+	mu        sync.Mutex
+	keys      map[string]*rsa.PublicKey
+	expires   time.Time
+	fetchedAt time.Time
 }
+
+// 伪造的 kid 不能让每个请求都去打 Google，缓存未过期时最多每分钟重新拉一次
+const minRefetch = time.Minute
 
 func NewVerifier(clientID string) *Verifier {
 	return &Verifier{ClientID: clientID, CertsURL: googleCertsURL, HTTP: &http.Client{Timeout: 8 * time.Second}, Now: time.Now}
@@ -54,9 +58,14 @@ type jwk struct {
 func (v *Verifier) key(ctx context.Context, kid string) (*rsa.PublicKey, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
-	if k, ok := v.keys[kid]; ok && v.Now().Before(v.expires) {
+	fresh := v.Now().Before(v.expires)
+	if k, ok := v.keys[kid]; ok && fresh {
 		return k, nil
 	}
+	if fresh && v.Now().Sub(v.fetchedAt) < minRefetch {
+		return nil, errors.New("未知的签名密钥")
+	}
+	v.fetchedAt = v.Now()
 	// 没缓存、过期或者遇到新的 kid（Google 轮换了密钥）都重新拉
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, v.CertsURL, nil)
 	if err != nil {

@@ -149,10 +149,14 @@ func spaHandler(dir string) http.Handler {
 }
 
 func writeJSON(w http.ResponseWriter, v any) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	if err := json.NewEncoder(w).Encode(v); err != nil {
+	b, err := json.Marshal(v)
+	if err != nil {
 		log.Printf("api: encode response: %v", err)
+		writeError(w, http.StatusInternalServerError, "服务器内部错误")
+		return
 	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Write(append(b, '\n'))
 }
 
 func writeError(w http.ResponseWriter, status int, msg string) {

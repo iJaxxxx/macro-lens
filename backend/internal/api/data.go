@@ -116,7 +116,7 @@ func (m *marketCache) liveHistory(ctx context.Context, symbol string) ([]market.
 	if err != nil || q.Time.IsZero() || len(bars) == 0 {
 		return bars, nil
 	}
-	date := q.Time.In(newYork).Format(time.DateOnly)
+	date := market.TradingDate(q.Time)
 	last := bars[len(bars)-1]
 	switch {
 	case date == last.Date:
@@ -149,11 +149,3 @@ func (m *marketCache) histories(ctx context.Context, symbols ...string) (map[str
 	wg.Wait()
 	return out, firstErr
 }
-
-var newYork = func() *time.Location {
-	loc, err := time.LoadLocation("America/New_York")
-	if err != nil {
-		panic(err)
-	}
-	return loc
-}()

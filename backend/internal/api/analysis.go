@@ -29,13 +29,14 @@ func closesOf(bars []market.Bar) ([]string, []float64) {
 // 回测统一用最近三年（约 756 个交易日），各策略起点相同才可比
 const backtestDays = 756
 
-func runBacktests(closes []float64) []quant.BacktestResult {
+// runBacktests 返回各策略结果和回测起点的下标
+func runBacktests(closes []float64) ([]quant.BacktestResult, int) {
 	start := max(200, len(closes)-1-backtestDays)
 	out := make([]quant.BacktestResult, len(quant.Strategies))
 	for i, s := range quant.Strategies {
 		out[i] = quant.Backtest(s, closes, start)
 	}
-	return out
+	return out, start
 }
 
 type BacktestView struct {
@@ -55,8 +56,8 @@ func computeBacktest(ctx context.Context, m *marketCache, t tracked) (BacktestVi
 		return BacktestView{}, fmt.Errorf("%s 的历史数据不足", t.symbol)
 	}
 	dates, closes := closesOf(bars)
-	start := max(200, len(closes)-1-backtestDays)
-	return BacktestView{Symbol: t.symbol, Name: t.sample.Name, From: dates[start], To: dates[len(dates)-1], Strategies: runBacktests(closes)}, nil
+	results, start := runBacktests(closes)
+	return BacktestView{Symbol: t.symbol, Name: t.sample.Name, From: dates[start], To: dates[len(dates)-1], Strategies: results}, nil
 }
 
 // buildInput 汇总智能体需要的全部数据：技术面、宏观因子、归因、回测和 VIX。
@@ -98,7 +99,8 @@ func buildInput(ctx context.Context, m *marketCache, t tracked) (agents.Input, e
 
 	_, closes := closesOf(bars[t.symbol])
 	if len(closes) >= 260 {
-		for _, r := range runBacktests(closes) {
+		results, _ := runBacktests(closes)
+		for _, r := range results {
 			in.Backtests = append(in.Backtests, agents.BacktestBrief{Name: r.Name, CAGR: r.CAGR, Sharpe: r.Sharpe, MaxDD: r.MaxDrawdown, Position: r.Position})
 		}
 	}
@@ -120,12 +122,15 @@ type analysisEntry struct {
 	mu         sync.Mutex
 	rep        agents.Report
 	at         time.Time
+	ttl        time.Duration
 	refreshing bool
 }
 
 const (
 	llmAnalysisTTL  = 6 * time.Hour
 	ruleAnalysisTTL = 5 * time.Minute
+	// 大模型调用失败后用规则结果顶上，过一段时间再重试，避免持续失败时反复调用
+	llmRetryTTL = 30 * time.Minute
 )
 
 // get 第一次请求某个品种时同步计算；之后过期了先返回旧结果，在后台刷新。
@@ -141,50 +146,48 @@ func (s *analysisService) get(ctx context.Context, t tracked) (agents.Report, er
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if !e.at.IsZero() {
-		ttl := ruleAnalysisTTL
-		if e.rep.Mode == "llm" {
-			ttl = llmAnalysisTTL
-		}
-		if time.Since(e.at) >= ttl && !e.refreshing {
+		if time.Since(e.at) >= e.ttl && !e.refreshing {
 			e.refreshing = true
 			go func() {
-				rep, err := s.compute(context.Background(), t)
+				rep, ttl, err := s.compute(context.Background(), t)
 				e.mu.Lock()
 				defer e.mu.Unlock()
 				e.refreshing = false
 				if err == nil {
-					e.rep, e.at = rep, time.Now()
+					e.rep, e.at, e.ttl = rep, time.Now(), ttl
 				}
 			}()
 		}
 		return e.rep, nil
 	}
-	rep, err := s.compute(context.WithoutCancel(ctx), t)
+	rep, ttl, err := s.compute(context.WithoutCancel(ctx), t)
 	if err != nil {
 		return agents.Report{}, err
 	}
-	e.rep, e.at = rep, time.Now()
+	e.rep, e.at, e.ttl = rep, time.Now(), ttl
 	return rep, nil
 }
 
-func (s *analysisService) compute(ctx context.Context, t tracked) (agents.Report, error) {
+// compute 返回研判结果和它的缓存时长
+func (s *analysisService) compute(ctx context.Context, t tracked) (agents.Report, time.Duration, error) {
 	in, err := buildInput(ctx, s.market, t)
 	if err != nil {
-		return agents.Report{}, err
+		return agents.Report{}, 0, err
 	}
 	if s.llm != nil {
 		lctx, cancel := context.WithTimeout(ctx, 4*time.Minute)
 		defer cancel()
 		rep, err := s.llm.Run(lctx, in)
 		if err == nil {
-			return rep, nil
+			return rep, llmAnalysisTTL, nil
 		}
 		log.Printf("analysis %s: llm failed, fallback to rules: %v", t.symbol, err)
 		rep, _ = s.rule.Run(ctx, in)
-		rep.Note = "大模型调用失败，本次结果由规则引擎生成"
-		return rep, nil
+		rep.Note = "大模型调用失败，本次结果由规则引擎生成，稍后会自动重试"
+		return rep, llmRetryTTL, nil
 	}
-	return s.rule.Run(ctx, in)
+	rep, err := s.rule.Run(ctx, in)
+	return rep, ruleAnalysisTTL, err
 }
 
 type ScoreItem struct {

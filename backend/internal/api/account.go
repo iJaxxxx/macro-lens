@@ -39,12 +39,16 @@ func (h *accountHandlers) login(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "Google 登录校验失败："+err.Error())
 		return
 	}
-	if len(h.allowed) > 0 && !slices.Contains(h.allowed, strings.ToLower(u.Email)) {
+	if !h.isAllowed(u.Email) {
 		writeError(w, http.StatusForbidden, u.Email+" 不在允许登录的名单里")
 		return
 	}
 	h.sessions.Issue(w, r, u)
 	writeJSON(w, u)
+}
+
+func (h *accountHandlers) isAllowed(email string) bool {
+	return len(h.allowed) == 0 || slices.Contains(h.allowed, strings.ToLower(email))
 }
 
 func (h *accountHandlers) logout(w http.ResponseWriter, r *http.Request) {
@@ -54,8 +58,8 @@ func (h *accountHandlers) logout(w http.ResponseWriter, r *http.Request) {
 
 func (h *accountHandlers) me(w http.ResponseWriter, r *http.Request) {
 	u, err := h.sessions.User(r)
-	if err != nil {
-		writeError(w, http.StatusUnauthorized, err.Error())
+	if err != nil || !h.isAllowed(u.Email) {
+		writeError(w, http.StatusUnauthorized, "未登录")
 		return
 	}
 	writeJSON(w, u)
@@ -67,6 +71,11 @@ func (h *accountHandlers) requireUser(next func(http.ResponseWriter, *http.Reque
 		u, err := h.sessions.User(r)
 		if err != nil {
 			writeError(w, http.StatusUnauthorized, "请先登录")
+			return
+		}
+		if !h.isAllowed(u.Email) {
+			h.sessions.Clear(w, r)
+			writeError(w, http.StatusForbidden, u.Email+" 不在允许登录的名单里")
 			return
 		}
 		next(w, r, u)

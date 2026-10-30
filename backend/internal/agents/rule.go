@@ -71,7 +71,7 @@ func technicalSignals(in Input) []signal {
 	default:
 		out = append(out, signal{fmt.Sprintf("RSI(14) 为 %.0f，处于中性区间", s.RSI14), 0})
 	}
-	out = append(out, signal{fmt.Sprintf("近 20 个交易日涨跌 %s", pct(s.Change20D)), math.Copysign(1, s.Change20D)})
+	out = append(out, signal{fmt.Sprintf("近 20 个交易日涨跌 %s", pct(s.Change20D)), sign(s.Change20D, 0)})
 
 	// 历史回测里夏普最高的策略当前给出的信号
 	var best *BacktestBrief
@@ -85,7 +85,7 @@ func technicalSignals(in Input) []signal {
 		if best.Position > 0 {
 			state, dir = "持有", 1
 		}
-		out = append(out, signal{fmt.Sprintf("五年回测夏普最高的「%s」（夏普 %.2f）当前信号为%s", best.Name, best.Sharpe, state), dir})
+		out = append(out, signal{fmt.Sprintf("近三年回测夏普最高的「%s」（夏普 %.2f）当前信号为%s", best.Name, best.Sharpe, state), dir})
 	}
 	return out
 }
@@ -102,7 +102,7 @@ func macroSignals(in Input) []signal {
 		dir := 0.0
 		// 推算影响小于 0.1% 视为可以忽略
 		if math.Abs(m.Impact5D) >= 0.001 {
-			dir = math.Copysign(1, m.Impact5D)
+			dir = sign(m.Impact5D, 0)
 		}
 		out = append(out, signal{fmt.Sprintf("%s 近 5 日 %s，按回归 beta 推算影响 %s", m.Name, move, pct(m.Impact5D)), dir})
 	}

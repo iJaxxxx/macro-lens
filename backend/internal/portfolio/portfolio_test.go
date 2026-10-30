@@ -52,6 +52,14 @@ func TestStore(t *testing.T) {
 	if _, err := s.Add("alice", tx("hold", "2026-01-04", 1, 1, 0)); err == nil {
 		t.Error("bad side accepted")
 	}
+	// 空仓时的极小卖出不能产生 0/0
+	if _, err := s.Add("carol", Transaction{Symbol: "VOO", Side: "sell", Date: "2026-01-04", Quantity: 1e-10, Price: 1}); err == nil {
+		t.Error("tiny sell on empty position accepted")
+	}
+	// 超大的数量和价格会让 数量 × 价格 溢出
+	if _, err := s.Add("carol", Transaction{Symbol: "VOO", Side: "buy", Date: "2026-01-04", Quantity: 1e200, Price: 1e200}); err == nil {
+		t.Error("overflowing amount accepted")
+	}
 	// 删掉买入会让卖出不合法
 	if err := s.Delete("alice", buy.ID); err == nil {
 		t.Error("delete that breaks history accepted")

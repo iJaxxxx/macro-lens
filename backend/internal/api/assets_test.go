@@ -61,7 +61,7 @@ func (f *fakeMarket) Quote(_ context.Context, symbol string) (market.Quote, erro
 	}
 	bars := fakeBars(symbol)
 	last, prev := bars[len(bars)-1], bars[len(bars)-2]
-	d, _ := time.ParseInLocation(time.DateOnly, last.Date, newYork)
+	d, _ := time.ParseInLocation(time.DateOnly, last.Date, market.NewYork)
 	return market.Quote{Price: last.Close, PrevClose: prev.Close, Points: []float64{prev.Close, last.Close}, Time: d.Add(16 * time.Hour)}, nil
 }
 
@@ -155,6 +155,16 @@ func TestAttribution(t *testing.T) {
 	}
 	if v.Title == "" || v.Summary == "" || v.Source != "rule" {
 		t.Errorf("narrative = %q / %q", v.Title, v.Summary)
+	}
+}
+
+func TestNarrationMatches(t *testing.T) {
+	e := &narration{text: "跌了", total: -0.004}
+	if !e.matches(-0.005) {
+		t.Error("small change should keep narration")
+	}
+	if e.matches(0.006) || e.matches(-0.01) {
+		t.Error("reversed or much larger move should invalidate narration")
 	}
 }
 
