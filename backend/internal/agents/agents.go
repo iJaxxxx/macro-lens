@@ -142,4 +142,3 @@ func riskPlan(in Input, dec string) RiskPlan {
 	band := s.Price * s.DailyVol * 2 * 3.1623
 	return RiskPlan{Position: round2(pos), StopLoss: round2(s.Price - band), TakeProfit: round2(s.Price + 1.5*band)}
 }
-

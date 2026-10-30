@@ -107,4 +107,3 @@ func Enum(desc string, values ...string) map[string]any {
 func Strings(desc string) map[string]any {
 	return map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": desc}
 }
-
