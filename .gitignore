@@ -4,3 +4,4 @@ dist
 *.log
 /backend/bin
 .vite
+backend/data/
