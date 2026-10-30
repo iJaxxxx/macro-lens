@@ -24,9 +24,14 @@ func main() {
 		log.Fatalf("session secret: %v", err)
 	}
 
+	yahoo := market.NewYahoo()
+	// 可以指向自建的代理或本地模拟服务
+	if v := os.Getenv("YAHOO_BASE_URL"); v != "" {
+		yahoo.BaseURL = v
+	}
 	cfg := api.Config{
 		StaticDir:      staticDir,
-		Market:         market.NewYahoo(),
+		Market:         yahoo,
 		LLM:            llm.FromEnv(),
 		GoogleClientID: os.Getenv("GOOGLE_CLIENT_ID"),
 		SessionSecret:  secret,

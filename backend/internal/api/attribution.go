@@ -85,7 +85,7 @@ func ruleNarrative(v AttributionView) (string, string) {
 	title := fmt.Sprintf("为什么%s今天%s了？", v.Name, verb)
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s 最新交易日（%s）%s %s。", v.Name, v.Date, verb, signedPct(v.Total))
+	fmt.Fprintf(&b, "%s 最新交易日（%s）%s %.2f%%。", v.Name, v.Date, verb, math.Abs(v.Total)*100)
 	factors := v.Rows[:len(v.Rows)-1]
 	other := v.Rows[len(v.Rows)-1]
 	var drivers, against []string

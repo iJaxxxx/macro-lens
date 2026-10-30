@@ -95,6 +95,26 @@ sudo systemctl restart macro-lens    # 重启
 
 发布结果在仓库的 **Actions** 页面查看，失败时点进去能看到每一步的日志。
 
+## 配置登录和大模型（可选）
+
+密钥类配置不进仓库，放在服务器上的 `/etc/macro-lens.env`，systemd 启动时读取：
+
+```bash
+ssh -i ~/.ssh/macro-lens.pem ec2-user@<公网IP>
+sudo tee /etc/macro-lens.env > /dev/null <<'ENV'
+GOOGLE_CLIENT_ID=xxxx.apps.googleusercontent.com
+ALLOWED_EMAILS=you@gmail.com
+ANTHROPIC_API_KEY=sk-ant-...
+ENV
+sudo chmod 600 /etc/macro-lens.env
+sudo systemctl restart macro-lens
+```
+
+- 不需要的项删掉即可：没有 `GOOGLE_CLIENT_ID` 时登录关闭，没有 `ANTHROPIC_API_KEY` 时 AI 研判用规则引擎。
+- Google 登录要求网站是 HTTPS 域名（见下一节），用公网 IP 直接访问时登录按钮会报错。
+- 用户的交易记录存在 `/opt/macro-lens/data`，重新发布不会覆盖。建议定期备份这个目录。
+
 ## 后续可以做的
 
-- 绑定域名 + HTTPS（Route 53 或其他域名商 + Caddy / Nginx 自动签证书）
+- 绑定域名 + HTTPS（Route 53 或其他域名商 + Caddy / Nginx 自动签证书）。Google 登录依赖这一步；
+  反向代理需要转发 `X-Forwarded-Proto`，后端据此给会话 Cookie 加上 `Secure`

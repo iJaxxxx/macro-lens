@@ -8,6 +8,12 @@ WorkingDirectory=/opt/macro-lens
 ExecStart=/opt/macro-lens/macro-lens
 Environment=PORT=80
 Environment=STATIC_DIR=/opt/macro-lens/dist
+# 用户交易记录和会话密钥，发布时不会被覆盖
+Environment=DATA_DIR=/opt/macro-lens/data
+# 密钥类配置放在服务器上的这个文件里（不进仓库），格式见 docs/deploy-aws.md：
+#   GOOGLE_CLIENT_ID=...  ANTHROPIC_API_KEY=...  ALLOWED_EMAILS=...
+# 文件不存在时（前面的 -）服务照常启动，只是登录和大模型功能关闭
+EnvironmentFile=-/etc/macro-lens.env
 # 允许非 root 用户监听 80 端口
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 Restart=always
